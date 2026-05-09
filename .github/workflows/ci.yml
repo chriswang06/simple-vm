@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Build (debug)
+        run: swift build
+
+      - name: Codesign with entitlement
+        run: codesign --entitlements SimpleVM.entitlements --force --sign - .build/debug/simple-vm
+
+      - name: --help smoke test
+        run: .build/debug/simple-vm --help
+
+      - name: Verify entitlement is applied
+        run: |
+          codesign -d --entitlements - .build/debug/simple-vm 2>&1 \
+            | grep -q 'com.apple.security.virtualization' \
+            || (echo "entitlement missing"; exit 1)

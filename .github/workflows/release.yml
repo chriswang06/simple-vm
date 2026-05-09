@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.1.0). Created if missing.'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build (release, arm64)
+        run: swift build -c release --arch arm64
+
+      - name: Codesign with entitlement
+        run: codesign --entitlements SimpleVM.entitlements --force --sign - .build/release/simple-vm
+
+      - name: Verify entitlement
+        run: |
+          codesign -d --entitlements - .build/release/simple-vm 2>&1 \
+            | grep -q 'com.apple.security.virtualization'
+
+      - name: Stage release artifacts
+        run: |
+          VERSION="${{ steps.ver.outputs.tag }}"
+          STAGE="simple-vm-${VERSION}-macos-arm64"
+          mkdir -p "$STAGE"
+          cp .build/release/simple-vm "$STAGE/"
+          cp SimpleVM.entitlements "$STAGE/"
+          cp README.md "$STAGE/"
+          tar -czf "${STAGE}.tar.gz" "$STAGE"
+          shasum -a 256 "${STAGE}.tar.gz" > "${STAGE}.tar.gz.sha256"
+          echo "stage=$STAGE" >> "$GITHUB_ENV"
+
+      - name: Create / update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.ver.outputs.tag }}"
+          NOTES="SimpleVM ${VERSION} — macOS arm64 (Apple Silicon).
+
+          Binary is ad-hoc codesigned with \`com.apple.security.virtualization\`.
+          Re-sign locally if Gatekeeper rejects it:
+
+              codesign --entitlements SimpleVM.entitlements --force --sign - simple-vm
+
+          Requires macOS 14+ on Apple Silicon."
+
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release upload "$VERSION" "${stage}.tar.gz" "${stage}.tar.gz.sha256" --clobber
+          else
+            gh release create "$VERSION" \
+              --title "SimpleVM ${VERSION}" \
+              --notes "$NOTES" \
+              "${stage}.tar.gz" "${stage}.tar.gz.sha256"
+          fi
