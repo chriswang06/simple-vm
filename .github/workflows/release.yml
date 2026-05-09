@@ -59,10 +59,21 @@ jobs:
           VERSION="${{ steps.ver.outputs.tag }}"
           NOTES="SimpleVM ${VERSION} — macOS arm64 (Apple Silicon).
 
-          Binary is ad-hoc codesigned with \`com.apple.security.virtualization\`.
-          Re-sign locally if Gatekeeper rejects it:
+          ## Install
+          \`\`\`sh
+          curl -L -o simple-vm.tar.gz \\
+            https://github.com/chriswang06/simple-vm/releases/download/${VERSION}/simple-vm-${VERSION}-macos-arm64.tar.gz
+          tar -xzf simple-vm.tar.gz
+          cd simple-vm-${VERSION}-macos-arm64
+          xattr -d com.apple.quarantine simple-vm 2>/dev/null || true
+          codesign --entitlements SimpleVM.entitlements --force --sign - simple-vm
+          ./simple-vm --help
+          \`\`\`
 
-              codesign --entitlements SimpleVM.entitlements --force --sign - simple-vm
+          Binary is ad-hoc codesigned with the \`com.apple.security.virtualization\`
+          entitlement. The \`xattr\` step strips Gatekeeper's quarantine flag (only
+          needed for downloaded files); the \`codesign\` step re-attaches the
+          entitlement after the move.
 
           Requires macOS 14+ on Apple Silicon."
 

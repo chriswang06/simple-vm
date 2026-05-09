@@ -3,15 +3,58 @@
 A minimal macOS- and Linux-guest VM for Apple Silicon, built on
 `Virtualization.framework`. Single-binary CLI plus a SwiftUI window.
 
-## Build
+> Requires **macOS 14+ on Apple Silicon** (M1/M2/M3/M4). Intel Macs are
+> not supported — `Virtualization.framework`'s macOS-guest path is
+> Apple-Silicon-only.
+
+## Install
+
+### From source (recommended)
+
+```sh
+git clone https://github.com/chriswang06/simple-vm.git
+cd simple-vm
+make build
+.build/debug/simple-vm --help
+```
+
+The Makefile codesigns with the virtualization entitlement automatically.
+Needs Xcode Command Line Tools (`xcode-select --install`).
+
+### From a release tarball
+
+After a release is cut, fetch the prebuilt arm64 binary:
+
+```sh
+VERSION=v0.1.0
+curl -L -o simple-vm.tar.gz \
+  https://github.com/chriswang06/simple-vm/releases/download/$VERSION/simple-vm-$VERSION-macos-arm64.tar.gz
+tar -xzf simple-vm.tar.gz
+cd simple-vm-$VERSION-macos-arm64
+xattr -d com.apple.quarantine simple-vm 2>/dev/null || true
+codesign --entitlements SimpleVM.entitlements --force --sign - simple-vm
+./simple-vm --help
+```
+
+The `xattr` removes Gatekeeper's download quarantine; the `codesign` step
+re-attaches the virtualization entitlement.
+
+### Homebrew
+
+```sh
+brew tap chriswang06/tap
+brew install simple-vm
+```
+
+(Requires the tap repo to be set up — see `Formula/simple-vm.rb` in this
+repository.)
+
+## Build (development)
 
 ```sh
 make build                  # debug + ad-hoc codesign with entitlement
 make build CONFIG=release
 ```
-
-Codesigning is required — without `com.apple.security.virtualization`,
-`VZVirtualMachineConfiguration.validate()` fails.
 
 ## Sanity check
 
@@ -105,3 +148,20 @@ GitHub Actions builds and ad-hoc-signs an arm64 release tarball on tag push:
 git tag v0.1.0
 git push --tags
 ```
+
+The release workflow attaches `simple-vm-vX.Y.Z-macos-arm64.tar.gz` and a
+SHA256 checksum to a GitHub release with install instructions in the notes.
+
+### Updating the Homebrew tap (optional)
+
+After cutting a release:
+
+```sh
+# Compute the SHA256 of the new tarball
+shasum -a 256 simple-vm-vX.Y.Z-macos-arm64.tar.gz
+
+# Update Formula/simple-vm.rb with the new version + sha
+# Push that file to chriswang06/homebrew-tap (Formula/simple-vm.rb)
+```
+
+Users then `brew upgrade simple-vm`.
